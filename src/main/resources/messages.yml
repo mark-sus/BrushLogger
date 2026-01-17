@@ -1,0 +1,49 @@
+plugin_enabled: "<green>BlockLogger enabled with SQLite logging + history brush!</green>"
+
+no_block_history: "<gray>Standard generated block.</gray>"
+standart_generated_title: "<gray>Standard generated block.</gray>"
+
+block_history_title: "<gradient:#FFD700:#FFA500>📜 Block History</gradient>"
+container_history_title: "<gradient:#00E5FF:#2979FF>📦 Container History</gradient>"
+
+container_history_command: "<gold>Recent container actions (%x%,%y%,%z%):</gold>"
+block_history_command: "<gold>Block history (%x%,%y%,%z%):</gold>"
+
+
+history_brush_name: "Glowing Brush"
+history_brush_lore: "Allows you to view the history of a block when used"
+
+log_block_place: "<gradient:#4CAF50:#A5D6A7>🟩 Placed</gradient>"
+log_block_break: "<gradient:#E53935:#FF8A80>🟥 Broken</gradient>"
+log_block_explode: "<gradient:#FF9800:#FFEB3B>💥 Exploded</gradient>"
+log_container_take: "<gradient:#29B6F6:#81D4FA>📤 Took</gradient>"
+log_container_put: "<gradient:#AB47BC:#CE93D8>📥 Put</gradient>"
+
+player_only_command: "<red>This command can only be executed by a player!</red>"
+
+no_records: "<gradient:#FF5252:#FF1744>⚠ No records found</gradient>"
+messages_reloaded: "<gradient:#00E676:#69F0AE>🔄 Messages reloaded!</gradient>"
+
+by_player: "<gray> by </gray><gradient:#00FFAA:#00CC88>%player%</gradient>"
+time_ago: "<dark_gray> ⏰ %time%</dark_gray>"
+
+maxlog_usage: "<red>Usage: /bl maxlog <1-50></red>"
+maxlog_number: "<red>Value must be a number</red>"
+maxlog_range: "<red>Value must be between 1 and 50</red>"
+maxlog_set: "<green>Max chat logs set to <yellow>%value%</yellow></green>"
+no_permission: "<red>You don't have permission</red>"
+
+output:
+  type: actionbar
+  # chatmessage
+  # actionbar
+  # itemdescription
+  # combined
+
+history_format:
+  title: "<gold></gold>"
+  action: "<gray>-</gray> <white>Action:</white> <yellow>%action%</yellow>"
+  block: "<gray>-</gray> <white>Block:</white> <aqua>%block%</aqua>"
+  player: "<gray>-</gray> <white>Player:</white> <green>%player%</green>"
+  time: "<gray>-</gray> <white>Time:</white> <gray>%time%</gray>"
+  separator: "<dark_gray>----------------</dark_gray>"

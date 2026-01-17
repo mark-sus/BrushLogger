@@ -1,0 +1,21 @@
+name: BlockLogger
+version: 1.5
+main: org.mvk.blockLogger.BlockLogger
+api-version: 1.21
+
+commands:
+  bl:
+    description: BlockLogger main command
+    usage: /bl history <x> <y> <z>
+    permission: blocklogger.command
+
+permissions:
+  blocklogger.command:
+    default: op
+  blocklogger.history:
+    default: op
+  blocklogger.reload:
+    default: op
+  blocklogger.maxlog:
+    description: Change max logs shown in chat
+    default: true
