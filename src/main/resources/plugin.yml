@@ -1,7 +1,8 @@
 name: BlockLogger
-version: 1.5
+version: 1.4
 main: org.mvk.blockLogger.BlockLogger
 api-version: 1.21
+softdepend: [CoreProtect]
 
 commands:
   bl:
@@ -15,6 +16,7 @@ permissions:
   blocklogger.history:
     default: op
   blocklogger.reload:
+    description: Reload plugin
     default: op
   blocklogger.maxlog:
     description: Change max logs shown in chat

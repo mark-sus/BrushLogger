@@ -1,13 +1,19 @@
 package org.mvk.blockLogger;
 
+import net.coreprotect.CoreProtect;
+import net.coreprotect.CoreProtectAPI;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.Container;
 import org.bukkit.block.DoubleChest;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -15,35 +21,29 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 import org.jetbrains.annotations.NotNull;
-import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.jetbrains.annotations.Nullable;
-import org.bukkit.command.TabCompleter;
-
-import org.bukkit.event.inventory.InventoryOpenEvent;
-import org.bukkit.event.inventory.InventoryCloseEvent;
-
-import java.util.UUID;
-import java.util.HashMap;
-import java.util.Map;
 
 import java.io.File;
 import java.sql.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.logging.Level;
 
 public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
@@ -51,19 +51,19 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
     // ===== CONFIG =====
     private FileConfiguration messages;
 
-    // ===== DATABASE =====
+    // ===== DATABASE & API =====
     protected Connection connection;
+    private CoreProtectAPI cpApi;
 
     // ===== ITEM =====
     protected ItemStack historyBrush;
 
     private static final String PERM_COMMAND = "blocklogger.command";
     private static final String PERM_HISTORY = "blocklogger.history";
-    private static final String PERM_RELOAD  = "blocklogger.reload";
+    private static final String PERM_RELOAD = "blocklogger.reload";
     private static final String PERM_MAXLOG = "blocklogger.maxlog";
     private int chatMaxLogs = 10;
     private final Map<UUID, Block> openContainers = new HashMap<>();
-
 
     private final MiniMessage mm = MiniMessage.miniMessage();
 
@@ -128,11 +128,31 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
         setupDatabase();
         setupHistoryBrush();
 
-        Bukkit.getPluginManager().registerEvents(this, this);
+        cpApi = getCoreProtect();
+        if (cpApi != null) {
+            getLogger().info("CoreProtect знайдено! Використовуємо його базу даних.");
+        } else {
+            getLogger().info("CoreProtect не знайдено. Використовуємо локальну базу даних SQLite.");
+        }
 
+        Bukkit.getPluginManager().registerEvents(this, this);
         getCommand("bl").setTabCompleter(this);
 
         getLogger().info(msg("plugin_enabled"));
+    }
+
+    private CoreProtectAPI getCoreProtect() {
+        Plugin plugin = getServer().getPluginManager().getPlugin("CoreProtect");
+
+        if (plugin == null || !(plugin instanceof CoreProtect)) {
+            return null;
+        }
+
+        CoreProtectAPI api = ((CoreProtect) plugin).getAPI();
+        if (api.isEnabled() && api.APIVersion() >= 6) {
+            return api;
+        }
+        return null;
     }
 
     @Override
@@ -194,6 +214,18 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
             return dbTime;
         }
     }
+    private String formatTimeAgoUnix(long timestamp) {
+        Instant eventTime = Instant.ofEpochSecond(timestamp);
+        Instant now = Instant.now();
+        long seconds = Duration.between(eventTime, now).getSeconds();
+
+        if (seconds < 60) return seconds + "s ago";
+        long minutes = seconds / 60;
+        if (minutes < 60) return minutes + "m ago";
+        long hours = minutes / 60;
+        if (hours < 24) return hours + "h ago";
+        return (hours / 24) + "d ago";
+    }
 
     private void loadMessages() {
         File file = new File(getDataFolder(), "messages.yml");
@@ -252,19 +284,21 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
     }
 
     private void setupHistoryBrush() {
-
         historyBrush = new ItemStack(Material.BRUSH);
         ItemMeta meta = historyBrush.getItemMeta();
 
-        meta.displayName(Component.text("History Brush", NamedTextColor.GOLD));
+        String nameRaw = messages.getString("history_brush_name", "<gradient:#FFD700:#FFA500>History Brush</gradient>");
+        meta.displayName(mm.deserialize(nameRaw));
 
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text(msg("history_brush_lore"), NamedTextColor.GRAY));
+        lore.add(mm.deserialize(messages.getString("history_brush_lore", "Check block history")));
         meta.lore(lore);
 
         historyBrush.setItemMeta(meta);
 
         NamespacedKey key = new NamespacedKey(this, "history_brush");
+        Bukkit.removeRecipe(key);
+
         ShapedRecipe recipe = new ShapedRecipe(key, historyBrush);
         recipe.shape("GGG", " B ", "   ");
         recipe.setIngredient('B', Material.BRUSH);
@@ -280,8 +314,8 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
         ItemMeta meta = item.getItemMeta();
         if (!meta.hasDisplayName()) return false;
 
-        return Component.text("History Brush", NamedTextColor.GOLD)
-                .equals(meta.displayName());
+        Component configName = mm.deserialize(messages.getString("history_brush_name"));
+        return meta.displayName().equals(configName);
     }
 
     // ===== OUTPUT TYPE =====
@@ -295,6 +329,26 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
         };
     }
 
+    public void highlightBlockGlowing(Block block) {
+        org.bukkit.entity.MagmaCube entity = block.getWorld().spawn(block.getLocation().add(0.5, 0, 0.5), org.bukkit.entity.MagmaCube.class, cube -> {
+            cube.setSize(2);
+            cube.setInvisible(true);
+            cube.setInvulnerable(true);
+            cube.setGravity(false);
+            cube.setAI(false);
+            cube.setSilent(true);
+            cube.setGlowing(true);
+        });
+        Scoreboard board = Bukkit.getScoreboardManager().getMainScoreboard();
+        Team team = board.getTeam("BL_Highlight");
+        if (team == null) {
+            team = board.registerNewTeam("BL_Highlight");
+            team.color(NamedTextColor.AQUA);
+        }
+        team.addEntry(entity.getUniqueId().toString());
+
+        Bukkit.getScheduler().runTaskLater(this, entity::remove, 60L);
+    }
     // ===== HISTORY OUTPUT =====
     protected void outputHistory(Player player, ItemStack brush, List<Component> history) {
 
@@ -351,17 +405,54 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
         }
     }
     protected List<Component> getBlockHistory(Block block) {
-
         List<Component> result = new ArrayList<>();
 
-        try (PreparedStatement ps = connection.prepareStatement("""
-        SELECT action, block, player, time
-        FROM block_logs
-        WHERE world=? AND x=? AND y=? AND z=?
-        ORDER BY id DESC
-        LIMIT 10
-    """)) {
+        if (cpApi != null) {
+            List<String[]> lookup = cpApi.blockLookup(block, 0);
 
+            if (lookup != null) {
+                for (String[] data : lookup) {
+                    CoreProtectAPI.ParseResult parse = cpApi.parseResult(data);
+                    String user = parse.getPlayer();
+                    String type = parse.getType().name().toLowerCase().replace("_", " ");
+                    int actionId = parse.getActionId();
+
+                    String actionName;
+                    String extraInfo = "";
+
+                    if (actionId == 0) {
+                        if (user.startsWith("#")) {
+                            actionName = "<red>destroyed</red>";
+                            extraInfo = " by <yellow>" + user + "</yellow>";
+                            user = "Explosion";
+                        } else {
+                            actionName = "Broke";
+                        }
+                    } else if (actionId == 1) {
+                        actionName = "Place";
+                    } else {
+                        actionName = "Change";
+                    }
+
+                    long unixSeconds = Long.parseLong(data[0]);
+                    String timeAgo = formatTimeAgoUnix(unixSeconds);
+
+                    result.add(mm.deserialize(
+                            "<green>" + user + "</green> " + actionName + " <white>" + type + "</white>" +
+                                    extraInfo + " <gray>(" + timeAgo + ")</gray>"
+                    ));
+                }
+            }
+            return result;
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement("""
+            SELECT action, block, player, time
+            FROM block_logs
+            WHERE world=? AND x=? AND y=? AND z=?
+            ORDER BY id DESC
+            LIMIT 10
+        """)) {
             ps.setString(1, block.getWorld().getName());
             ps.setInt(2, block.getX());
             ps.setInt(3, block.getY());
@@ -369,14 +460,12 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    result.add(
-                            mm.deserialize(
-                                    rs.getString("action") +
-                                            " <white>" + rs.getString("block") + "</white>" +
-                                            messages.getString("by_player").replace("%player%", rs.getString("player")) +
-                                            messages.getString("time_ago").replace("%time%", formatTimeAgo(rs.getString("time")))
-                            )
-                    );
+                    result.add(mm.deserialize(
+                            rs.getString("action") +
+                                    " <white>" + rs.getString("block") + "</white>" +
+                                    messages.getString("by_player").replace("%player%", rs.getString("player")) +
+                                    messages.getString("time_ago").replace("%time%", formatTimeAgo(rs.getString("time")))
+                    ));
                 }
             }
         } catch (SQLException e) {
@@ -385,28 +474,19 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
 
         return result;
     }
+
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent e) {
-        Block block = e.getBlockPlaced();
-        Player player = e.getPlayer();
-
-        logBlock(
-                block,
-                msg("log_block_place"),
-                player.getName()
-        );
+        if (cpApi != null) return;
+        logBlock(e.getBlockPlaced(), msg("log_block_place"), e.getPlayer().getName());
     }
+
     @EventHandler
     public void onBlockBreak(BlockBreakEvent e) {
-        Block block = e.getBlock();
-        Player player = e.getPlayer();
-
-        logBlock(
-                block,
-                msg("log_block_break"),
-                player.getName()
-        );
+        if (cpApi != null) return;
+        logBlock(e.getBlock(), msg("log_block_break"), e.getPlayer().getName());
     }
+
     @Nullable
     protected Block getContainerBlock(Inventory inventory) {
 
@@ -432,19 +512,30 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
 
     @EventHandler
     public void onExplode(EntityExplodeEvent e) {
+        String source = (e.getEntity() != null) ? "#" + e.getEntity().getType().name().toLowerCase() : "#explosion";
 
-        String source = e.getEntity() != null
-                ? e.getEntity().getType().name()
-                : "UNKNOWN";
+        if (e.getEntityType() == org.bukkit.entity.EntityType.TNT && cpApi != null) {
+            List<String[]> lookup = cpApi.blockLookup(e.getLocation().getBlock(), 0);
+            if (lookup != null && !lookup.isEmpty()) {
+                for (String[] data : lookup) {
+                    CoreProtectAPI.ParseResult parse = cpApi.parseResult(data);
+                    if (parse.getActionId() == 1) {
+                        source = parse.getPlayer();
+                        break;
+                    }
+                }
+            }
+        }
 
         for (Block block : e.blockList()) {
             logBlock(
                     block,
-                    msg("log_block_explode"),
+                    "Blown up",
                     source
             );
         }
     }
+
     protected void logContainer(Block block, String action, String item, int amount, String player) {
         try (PreparedStatement ps = connection.prepareStatement("""
         INSERT INTO container_logs (world, x, y, z, action, item, amount, player)
@@ -466,16 +557,14 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
     }
 
     protected List<Component> getContainerHistory(Block block) {
-
         List<Component> result = new ArrayList<>();
-
         try (PreparedStatement ps = connection.prepareStatement("""
-        SELECT action, item, amount, player, time
-        FROM container_logs
-        WHERE world=? AND x=? AND y=? AND z=?
-        ORDER BY id DESC
-        LIMIT 10
-    """)) {
+            SELECT action, item, amount, player, time
+            FROM container_logs
+            WHERE world=? AND x=? AND y=? AND z=?
+            ORDER BY id DESC
+            LIMIT 10
+            """)) {
 
             ps.setString(1, block.getWorld().getName());
             ps.setInt(2, block.getX());
@@ -497,8 +586,68 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
         } catch (SQLException e) {
             getLogger().log(Level.SEVERE, "Container history read error", e);
         }
-
         return result;
+    }
+
+    public void openContainerHistoryGUI(Player player, Block block) {
+
+        Component title = c("container_history_title");
+        Inventory gui = Bukkit.createInventory(null, 54, title);
+
+        try (PreparedStatement ps = connection.prepareStatement("""
+            SELECT action, item, amount, player, time
+            FROM container_logs
+            WHERE world=? AND x=? AND y=? AND z=?
+            ORDER BY id DESC LIMIT 54
+            """)) {
+
+            ps.setString(1, block.getWorld().getName());
+            ps.setInt(2, block.getX());
+            ps.setInt(3, block.getY());
+            ps.setInt(4, block.getZ());
+
+            try (ResultSet rs = ps.executeQuery()) {
+                int slot = 0;
+                while (rs.next() && slot < 54) {
+                    String actionStr = rs.getString("action");
+                    String itemName = rs.getString("item");
+                    int amount = rs.getInt("amount");
+                    String playerName = rs.getString("player");
+                    String timeAgo = formatTimeAgo(rs.getString("time"));
+
+                    Material mat = Material.matchMaterial(itemName);
+                    if (mat == null || !mat.isItem()) mat = Material.PAPER;
+
+                    ItemStack logItem = new ItemStack(mat);
+                    ItemMeta meta = logItem.getItemMeta();
+
+                    meta.displayName(mm.deserialize(actionStr + ": <white>" + itemName + "</white>"));
+
+                    List<Component> lore = new ArrayList<>();
+                    lore.add(mm.deserialize("<gray>Count: <white>" + amount + "</white>"));
+                    lore.add(mm.deserialize("<gray>By: </gray>").append(mm.deserialize(messages.getString("by_player", "%player%").replace("%player%", playerName))));
+                    lore.add(mm.deserialize(messages.getString("time_ago", " %time%").replace("%time%", timeAgo)));
+
+                    meta.lore(lore);
+                    logItem.setItemMeta(meta);
+                    gui.setItem(slot, logItem);
+                    slot++;
+                }
+            }
+        } catch (SQLException e) {
+            getLogger().severe("GUI error: " + e.getMessage());
+        }
+
+        player.openInventory(gui);
+    }
+
+    @EventHandler
+    public void onGUIClick(InventoryClickEvent e) {
+        if (e.getClickedInventory() == null) return;
+
+        if (e.getView().title().equals(c("container_history_title"))) {
+            e.setCancelled(true);
+        }
     }
 
     @EventHandler
@@ -611,37 +760,59 @@ public class BlockLogger extends JavaPlugin implements Listener, TabCompleter {
         }, 0L, 10L);
     }
 
+
     @EventHandler
     public void onBrushUse(PlayerInteractEvent e) {
-
         if (e.getAction() != Action.RIGHT_CLICK_BLOCK) return;
-        if (!isHistoryBrush(e.getItem())) return;
         if (e.getClickedBlock() == null) return;
+        if (!isHistoryBrush(e.getItem())) return;
 
         Player player = e.getPlayer();
         Block clicked = e.getClickedBlock();
 
-        e.setCancelled(true);
+        if (clicked.getState() instanceof Container) {
+            e.setCancelled(true);
+        }
+
+        player.playSound(player.getLocation(), Sound.ITEM_BRUSH_BRUSHING_GENERIC, 1.0f, 1.0f);
 
         Block targetBlock = clicked;
-
-        if (clicked.getState() instanceof Container) {
-            targetBlock = clicked;
+        if (clicked.getState() instanceof org.bukkit.block.Chest chest) {
+            InventoryHolder holder = chest.getInventory().getHolder();
+            if (holder instanceof DoubleChest doubleChest) {
+                targetBlock = ((org.bukkit.block.Chest) doubleChest.getLeftSide()).getBlock();
+            }
         }
 
-        highlightBlock(targetBlock, 60);
+        final Block finalTarget = targetBlock;
+        final ItemStack brush = e.getItem();
+        final UUID playerUUID = player.getUniqueId();
 
-        List<Component> history;
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            Player p = Bukkit.getPlayer(playerUUID);
+            if (p == null || !p.isOnline()) return;
 
-        if (targetBlock.getState() instanceof Container) {
-            history = getContainerHistory(targetBlock);
-        } else {
-            history = getBlockHistory(targetBlock);
-        }
+            if (!isHistoryBrush(p.getInventory().getItemInMainHand())) return;
 
-        outputHistory(player, e.getItem(), history);
-        player.getInventory().setItemInMainHand(e.getItem());
-        player.updateInventory();
+            highlightBlockGlowing(finalTarget);
+
+            p.playSound(p.getLocation(), Sound.ITEM_BRUSH_BRUSHING_GENERIC, 1.0f, 1.0f);
+
+            if (finalTarget.getState() instanceof Container) {
+                String mode = messages.getString("container_output_mode", "GUI");
+                if (mode.equalsIgnoreCase("GUI")) {
+                    openContainerHistoryGUI(p, finalTarget);
+                } else {
+                    List<Component> history = getContainerHistory(finalTarget);
+                    outputHistory(p, brush, history);
+                }
+            } else {
+                List<Component> history = getBlockHistory(finalTarget);
+                outputHistory(p, brush, history);
+            }
+
+            p.updateInventory();
+        }, 60L);
     }
 
 

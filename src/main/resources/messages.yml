@@ -6,12 +6,13 @@ standart_generated_title: "<gray>Standard generated block.</gray>"
 block_history_title: "<gradient:#FFD700:#FFA500>📜 Block History</gradient>"
 container_history_title: "<gradient:#00E5FF:#2979FF>📦 Container History</gradient>"
 
+
 container_history_command: "<gold>Recent container actions (%x%,%y%,%z%):</gold>"
 block_history_command: "<gold>Block history (%x%,%y%,%z%):</gold>"
 
 
-history_brush_name: "Glowing Brush"
-history_brush_lore: "Allows you to view the history of a block when used"
+history_brush_name: "<gradient:#FFD700:#FFA500>Glowing Brush</gradient>"
+history_brush_lore: "<gray>Allows you to view the history of a block when used</gray>"
 
 log_block_place: "<gradient:#4CAF50:#A5D6A7>🟩 Placed</gradient>"
 log_block_break: "<gradient:#E53935:#FF8A80>🟥 Broken</gradient>"
@@ -39,6 +40,9 @@ output:
   # actionbar
   # itemdescription
   # combined
+
+# Спосіб виведення історії контейнерів: GUI або CHAT
+container_output_mode: "GUI"
 
 history_format:
   title: "<gold></gold>"
